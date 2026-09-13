@@ -1,0 +1,42 @@
+name: Build Windows application
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-portable-build
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Test and build portable application
+        shell: pwsh
+        run: ./scripts/build_windows.ps1
+      - name: Upload Windows application
+        uses: actions/upload-artifact@v7
+        with:
+          name: NightReports-Windows-x64
+          path: |
+            releases/**/*.zip
+            releases/**/*.sha256.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Windows-test-results
+          path: |
+            releases/**/windows-test-results.txt
+            releases/**/packaged-self-test.json
+          if-no-files-found: warn
+          retention-days: 7
