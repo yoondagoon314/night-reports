@@ -48,7 +48,8 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual([p.name for p in self.adapter.files], [r.slot.filename for r in self.check.rows])
         record = self.service.existing(self.check)
         self.assertEqual(record['state'], 'ready')
-        self.assertEqual(record['check']['reports'][3]['confirmation']['reviewer'], 'TEST')
+        self.assertEqual(record['check']['reports'][3]['status'], 'PASS')
+        self.assertIsNone(record['check']['reports'][3]['confirmation'])
         self.assertEqual(record['email']['recipient_count'], 17)
         self.assertEqual(len(record['files']), 23)
 
