@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+import calendar
 import json
 import logging
 import re
@@ -53,7 +54,34 @@ def extract_period(first: str, pages: tuple[str, ...], kind: str | None) -> Peri
     # dates in body tables must never be interpreted as the report period.
     starts, ends = set(), set()
     invalid = False
+    def add_date(value, values):
+        nonlocal invalid
+        try:
+            values.add(parse_report_date(value))
+        except ValueError:
+            invalid = True
+
     for page in pages:
+        if kind == "birthdays":
+            for label, values in (("From", starts), ("To", ends)):
+                for value in re.findall(rf"\b{label}\s+Stay\s+Date\s*[:=]?\s*({DATE})", page, re.I):
+                    add_date(value, values)
+        elif kind == "events":
+            for a, b in re.findall(rf"\bDate\s*:\s*({DATE})\s+To\s+({DATE})", page, re.I):
+                add_date(a, starts)
+                add_date(b, ends)
+        elif kind == "groups":
+            # The page header describes one month/status. The footer describes
+            # the complete report, which can span several months and pages.
+            for label, values in (("Start", starts), ("End", ends)):
+                for month, year in re.findall(rf"\bPeriod\s+{label}\s*:\s*([A-Za-z]+)\s*(\d{{4}})", page, re.I):
+                    try:
+                        number = list(calendar.month_name).index(month.capitalize())
+                        day = 1 if label == "Start" else calendar.monthrange(int(year), number)[1]
+                        values.add(date(int(year), number, day))
+                    except (ValueError, IndexError):
+                        invalid = True
+
         for label, values in (("From", starts), ("To", ends)):
             for value in re.findall(rf"\b{label}\s+Date\s*[:=]?\s*({DATE})", page, re.I):
                 try:
@@ -72,6 +100,9 @@ def extract_period(first: str, pages: tuple[str, ...], kind: str | None) -> Peri
     # The issue date is printed at the start in supplied PDFs. It is not a
     # substitute for a labelled period except for the relative Yesterday report.
     m = re.match(rf"\s*({DATE})", first)
+    if not m:
+        # OPERA may extract its property/title before the top-right date/time.
+        m = re.search(rf"(?<![\d./-])({DATE})\s+\d{{1,2}}:\d{{2}}\b", first[:800])
     if m:
         try:
             issue = parse_report_date(m.group(1))
@@ -339,6 +370,10 @@ def validate_period(slot: Slot, doc: Document, audit: date, business: date) -> t
         if doc.filter_review:
             return "REVIEW", doc.filter_review
         return "PASS", "Report identity and period match."
+    if slot.rule.key == "complimentary" and p.issue:
+        if p.issue != audit:
+            return "WRONG", f"EOD report date is {p.issue:%d.%m.%Y}; expected {audit:%d.%m.%Y}."
+        return "PASS", "EOD complimentary report date matches the closed audit day."
     if slot.rule.key == "yesterday" and p.issue:
         if p.issue != business:
             return "WRONG", f"Yesterday report header is {p.issue:%d.%m.%Y}; expected {business:%d.%m.%Y}."
