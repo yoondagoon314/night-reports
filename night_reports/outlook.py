@@ -48,7 +48,7 @@ class OutlookAdapter:
                 item = app.CreateItem(0)
                 item.Close(1)  # olDiscard; unsaved compatibility probe, no recipients
                 return {"windows": platform.platform(), "outlook_version": str(app.Version),
-                        "result": "Classic Outlook can create an unsaved mail item. Full draft/attachment pilot still required."}
+                        "result": "Outlook connection OK. Automatic sending is supported; this connection check does not send a test email."}
             except Exception as exc:
                 raise OutlookError("Outlook opened, but the draft compatibility check failed. Verify the active mail profile.") from exc
 
@@ -155,4 +155,28 @@ class OutlookAdapter:
                 actual.append(str(smtp).casefold())
             if sorted(actual) != sorted(a.casefold() for a in settings.recipients):
                 raise OutlookError("Draft recipients changed. Automatic sending stopped.")
-            mail.Send()
+            if settings.sender:
+                accounts = [app.Session.Accounts.Item(i) for i in range(1, app.Session.Accounts.Count + 1)]
+                account = next((a for a in accounts if str(a.SmtpAddress).casefold() == settings.sender.casefold()), None)
+                if account is None:
+                    raise OutlookError("The selected sending account is not available in Outlook.")
+                mail.SendUsingAccount = account
+                mail.Save()
+            try:
+                mail.Send()
+            except Exception as exc:
+                code = getattr(exc, 'hresult', None)
+                raise OutlookError(f"Outlook did not confirm submission (code {code}). Check Outlook prompts, Outbox and account connectivity. No automatic retry will occur.") from exc
+
+    def submission_status(self, run_id):
+        with outlook_application() as app:
+            # Search a bounded recent window; never mistake submission for delivery.
+            for folder_id, label in ((5, "Sent Items confirms the message was sent."), (4, "Message is in Outbox; Outlook has not sent it yet.")):
+                items = app.Session.GetDefaultFolder(folder_id).Items
+                items.Sort("[CreationTime]", True)
+                for i in range(1, min(items.Count, 200) + 1):
+                    item = items.Item(i)
+                    prop = item.UserProperties.Find("MaisonNightReportsRun")
+                    if prop is not None and str(prop.Value) == run_id:
+                        return label
+            return "Submitted to Outlook; not found in recent Outbox or Sent Items. Check Outlook manually."
