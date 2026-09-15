@@ -125,6 +125,7 @@ class Document:
     error: str = ""
     filter_issue: str = ""
     filter_review: str = ""
+    forecast_offset: int | None = None
 
 
 def check_filters(text: str, kind: str | None) -> tuple[str, str]:
@@ -205,9 +206,14 @@ def inspect_pdf(path: Path) -> Document:
                             "Multiple report types in one PDF; export individual reports.")
         kind = next(iter(kinds), None)
         period = extract_period(pages[0], tuple(pages), kind)
-        filter_issue, filter_review = check_filters(pages[0][:2400], kind)
+        # Scheduler parameters are commonly in the footer, after body tables.
+        full_text = "\n".join(pages)
+        filter_text = full_text[full_text.lower().rfind("filter"):] if "filter" in full_text.lower() else full_text
+        filter_issue, filter_review = check_filters(filter_text, kind)
+        offset_match = re.search(r"Past\s+and\s+Future\s+Forecast\s+RS\s+MONTH(?:\s*\+\s*(\d{1,2}))?", pages[0][:1600], re.I)
+        offset = int(offset_match.group(1) or 0) if offset_match else None
         return Document(path, digest, size, kind, period, count,
-                        filter_issue=filter_issue, filter_review=filter_review)
+                        filter_issue=filter_issue, filter_review=filter_review, forecast_offset=offset)
     except Exception as exc:
         # Raw parser exceptions are intentionally not logged (they can carry data).
         return Document(path, digest, size, None, Period(),
@@ -238,6 +244,8 @@ class Check:
     rows: list[Row] = field(default_factory=list)
     extras: list[tuple[Document, str, bool]] = field(default_factory=list)
 
+    managed_only: bool = False
+
     def __post_init__(self):
         self.evaluate()
 
@@ -251,7 +259,8 @@ class Check:
         return {str(d.path): d.digest for d in self.documents}
 
     def assert_unchanged(self):
-        current = {str(p.resolve()): file_digest(p) for p in pdf_paths(self.folder)}
+        paths = [d.path for d in self.documents] if self.managed_only else pdf_paths(self.folder)
+        current = {str(p.resolve()): file_digest(p) for p in paths}
         if current != self.snapshot:
             raise ValueError("Files changed after checking. Check Reports again before proceeding.")
 
@@ -356,7 +365,11 @@ def validate_period(slot: Slot, doc: Document, audit: date, business: date) -> t
         return "WRONG", doc.filter_issue
     if p.ambiguous:
         return "WRONG", "Conflicting or invalid report periods. Export this report again."
-    if slot.rule.key == "forecast" and p.issue and p.issue != business:
+    if doc.forecast_offset is not None:
+        offset = (slot.start.year - business.year) * 12 + slot.start.month - business.month
+        if doc.forecast_offset != offset:
+            return "WRONG", "Scheduler MONTH offset does not match the PDF reporting month."
+    if slot.rule.key in ("forecast", "groups") and p.issue and p.issue != business:
         return "WRONG", f"Stale forecast: header date is {p.issue:%d.%m.%Y}; expected {business:%d.%m.%Y}."
     if slot.rule.date_basis == "review":
         return "REVIEW", "Exact hotel date/filter contract is pending. Open the PDF and record the period and filters you verified."
@@ -365,7 +378,7 @@ def validate_period(slot: Slot, doc: Document, audit: date, business: date) -> t
             return "WRONG", f"Wrong reporting period: expected {slot.expected}, found {p.display}."
         if not p.start or not p.end:
             return "REVIEW", f"Only part of the reporting period is readable. Verify {slot.expected}."
-        if slot.rule.key == "forecast" and not p.issue:
+        if slot.rule.key in ("forecast", "groups") and not p.issue:
             return "REVIEW", "Month matches, but the forecast issue date is unreadable. Verify it was generated for this pack."
         if doc.filter_review:
             return "REVIEW", doc.filter_review
