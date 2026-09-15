@@ -33,7 +33,7 @@ class GuiTests(unittest.TestCase):
             time.sleep(.02)
         self.assertFalse(self.app.busy)
         self.assertEqual(len(self.app.table.get_children()), 23)
-        self.assertIn('disabled', self.app.draft_button.state())
+        self.assertNotIn('disabled', self.app.draft_button.state())
         self.app.check = ready(self.folder)
         self.app.render()
         self.assertNotIn('disabled', self.app.draft_button.state())
