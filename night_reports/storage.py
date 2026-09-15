@@ -42,8 +42,11 @@ class Settings:
 
     automation_enabled: bool = False
     scheduler_folder: str = r"\\s-eu-hb772-fo\hb772"
-    collect_time: str = "07:05"
+    collect_time: str = "07:00"
     send_time: str = "07:10"
+
+    stop_time: str = "09:00"
+    sender: str = ""
 
     def validate(self, *, require_recipients=True):
         if not isinstance(self.recipients, list) or (require_recipients and not self.recipients) or any(not isinstance(a, str) or not re.fullmatch(r"[^\s@;,<>]+@[^\s@;,<>]+\.[^\s@;,<>]+", a) for a in self.recipients):
@@ -52,13 +55,15 @@ class Settings:
             raise ValueError("Remove repeated email addresses. Different domains are distinct recipients.")
         if not isinstance(self.subject, str) or not isinstance(self.body, str) or not self.subject.strip() or not self.body.strip() or "\n" in self.subject or "\r" in self.subject:
             raise ValueError("Enter a subject on one line and a non-empty email body.")
+        if not isinstance(self.sender, str) or (self.sender and not re.fullmatch(r"[^\s@;,<>]+@[^\s@;,<>]+\.[^\s@;,<>]+", self.sender)):
+            raise ValueError("Enter a valid sending-account email address, or leave it blank.")
         from datetime import time
         try:
-            collect, send = time.fromisoformat(self.collect_time), time.fromisoformat(self.send_time)
+            collect, send, stop = time.fromisoformat(self.collect_time), time.fromisoformat(self.send_time), time.fromisoformat(self.stop_time)
         except (ValueError, TypeError):
             raise ValueError("Enter schedule times as HH:MM.")
-        if send < collect:
-            raise ValueError("Send time must be after collection time.")
+        if send < collect or stop <= send:
+            raise ValueError("Use collection, send and stop times in that order.")
         if not isinstance(self.automation_enabled, bool) or not isinstance(self.scheduler_folder, str) or not self.scheduler_folder.strip():
             raise ValueError("Choose the OPERA scheduler folder.")
         if not isinstance(self.last_folder, str):
@@ -75,6 +80,9 @@ class Settings:
             return cls()
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+            # Migrate the previous release's polling default to the new window.
+            if "stop_time" not in data and data.get("collect_time") == "07:05":
+                data["collect_time"] = "07:00"
             result = cls(**data)
             result.validate(require_recipients=result.automation_enabled)
             return result
