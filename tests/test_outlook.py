@@ -125,6 +125,23 @@ class OutlookTests(unittest.TestCase):
         def app(): yield self.app
         with patch('night_reports.outlook.outlook_application', app), self.assertRaises(OutlookError):
             self.adapter.reopen(ref, self.files, 'wrong')
+    def test_send_checks_recipients_and_attachments(self):
+        ref = self.create()
+        for recipient in self.mail.Recipients.items:
+            recipient.AddressEntry = SimpleNamespace(Type='SMTP', Address=recipient.Address)
+        self.mail.Recipients.Item = lambda i: self.mail.Recipients.items[i-1]
+        calls = []
+        self.mail.Send = lambda: calls.append('submitted')
+        @contextmanager
+        def app(): yield self.app
+        with patch('night_reports.outlook.outlook_application', app):
+            self.adapter.send(ref, self.files, 'run', self.settings)
+            self.assertEqual(calls, ['submitted'])
+            self.mail.Recipients.items[0].AddressEntry.Address = 'other@example.org'
+            with self.assertRaises(OutlookError):
+                self.adapter.send(ref, self.files, 'run', self.settings)
+            self.assertEqual(calls, ['submitted'])
+
     def test_non_windows_compatibility_explains_requirement(self):
         with patch('night_reports.outlook.sys.platform', 'darwin'), self.assertRaisesRegex(OutlookError, 'classic Outlook on Windows'):
             self.adapter.compatibility()
