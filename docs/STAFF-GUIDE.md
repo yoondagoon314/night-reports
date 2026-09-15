@@ -1,17 +1,19 @@
-# Night Reports — first use and daily workflow
+# Daily Night Reports
 
-1. Extract the entire application folder. Keep `MaisonNightReports.exe` and `_internal` together. Open the executable or create a desktop shortcut using the included shortcut script.
-2. In **Settings**, enter the approved recipient list and exact email body/signature locally. Cloud builds contain no hotel recipients. The default subject is `RE: Night reports`. You may check PDFs before configuring email.
-3. Generate the reports normally. Choose their folder in the application. Only PDFs directly in that folder are scanned.
-4. Confirm the closed audit day and new OPERA business day from OPERA; the initial dates are suggestions from the computer clock.
-5. Select **Check Reports**. The pack requires 10 fixed reports and 13 full monthly forecasts starting with the new business month.
-6. For a review item, use **Open PDF**, inspect its period/filters, then **Confirm reporting period** with staff initials and a short note. Do not enter guest details. Event List and group forecast always require review during this pilot.
-7. For an unreadable forecast month, open its extra-file row, assign the month as YYYY-MM and separately confirm its period. Known wrong dates/filters cannot be overridden.
-8. Resolve missing/corrupt PDFs by regenerating them. Move duplicate copies outside the input folder, then recheck. Readable unrelated extras are excluded; unreadable extras block.
-9. Once 23/23 are ready and mail settings are configured, create the Outlook draft. The tool preserves originals, prepares renamed copies and verifies attachments. Review account, recipients, body and every attachment in classic Outlook before sending yourself.
+Open Settings and set the OPERA source share and the separate Night Reports destination. Enter the approved recipients and optional Outlook sending-account address. Enable automatic collection and sending.
 
-**Check Outlook compatibility** tests an unsaved, recipient-free mail item and discards it. The cloud build cannot establish compatibility with your local profile. Start with copied real packs, compare a draft to the manual pack, then require three consecutive successful real packs before regular use.
+The app checks once per minute from 07:00 until 09:00. It uses the PC's local day as the new business day and yesterday as the closed audit day. The date fields are for inspecting a different day; automatic processing uses today's dates. The PC must remain awake and signed in, with classic Outlook available.
 
-A repeat draft request reopens the saved draft where possible. An incomplete or uncertain attempt requires inspecting Outlook first; **Create another** deliberately creates an additional draft and preserves the earlier run history. No automatic sending is implemented.
+The Source reports tab shows original filenames, source paths, discovery time, original file timestamps, PDF issue dates, intended names and conversion status. Missing reports remain visible as collection continues. Scheduler reports come from the root share; Manager Net, No Shows and Complimentary come from the matching audit subfolder. The app never changes OPERA originals.
 
-**Run history** opens the per-user data folder. Retain it during pilot; it contains full prepared PDFs plus metadata and confirmations. Closing the app after an operation finishes leaves no background job. The existing manual workflow remains available.
+Scheduler titles include Package forecast RS, Event List Detailed RS, FIN01127 Revenue by transaction code all, and Past and Future Forecast RS MONTH with offsets +01 through +12. MONTH is the current month. Both the offset and PDF reporting period must agree. The PDF issue date must be current for scheduler forecasts, including the group rooms forecast.
+
+After all 23 qualify, the app stages, copies and renames them into the chosen destination. Previous managed copies are moved into .previous before replacement; unrelated files remain untouched and are not attached. It then switches to Prepared reports. The app creates and verifies the Outlook draft and sends no earlier than 07:10. At 09:00 an incomplete or unsent run stops for the day.
+
+The progress steps show collection, copying, verification, draft and send. Expand Activity log for details. Run history in Settings opens local records, including daily logs and original-file provenance. No guest PDF text is written to logs.
+
+Double-click a report for View PDF, Confirm correct report, Attach another report, or Close. Confirmation is only available for uncertain information after viewing the PDF. A known wrong date or stale report requires replacement. A replacement is checked before use. Changes after a draft has been prepared stop automatic sending and require Outlook review.
+
+Closing the window hides the app in Windows' notification area. Double-click its icon to restore it, or right-click for Open, Pause/resume or Exit. Windows controls whether the icon appears in the overflow area. Exit stops processing. This version does not launch itself at Windows sign-in.
+
+The Outlook connection check creates no email and sends nothing. Submission and delivery are separate: the activity log reports whether the message is found in Outbox or Sent Items. Sent Items is not proof that every recipient received the message. If a send attempt is uncertain, the app will not send another automatically; inspect Outlook and the daily run record first.
