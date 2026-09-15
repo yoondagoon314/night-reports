@@ -21,8 +21,8 @@ class EngineTests(unittest.TestCase):
 
     def test_complete_pack_needs_documented_reviews(self):
         c = self.check()
-        self.assertEqual([r.slot.key for r in c.rows if r.status == 'REVIEW'], ['events', 'groups'])
-        self.assertFalse(c.ready)
+        self.assertEqual([r.slot.key for r in c.rows if r.status == 'REVIEW'], [])
+        self.assertTrue(c.ready)
         self.assertTrue(ready(self.folder).ready)
 
     def test_missing_fixed(self):
@@ -221,3 +221,41 @@ class EngineTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OperaLayoutTests(unittest.TestCase):
+    def test_screenshot_layouts_pass_and_wrong_dates_fail(self):
+        from night_reports.engine import Document, validate_period
+        audit, business = date(2026, 9, 13), date(2026, 9, 14)
+        slots = {s.key: s for s in manifest(audit, business)}
+        samples = {
+            'birthdays': 'Maison Sofia MGallery\n14.09.26\n07:36\nPRO01110 Birthday Guests\nFilter From Birth Date 14.09 To Birth Date 14.09\n***From Stay Date 14.09.26 ***To Stay Date 14.09.26',
+            'events': 'Maison Sofia MGallery\n14.09.26\n07:37\nEvent List Detailed\n17th September 2026\nFilter\nDate: 14.09.26 To 21.09.26 / Accounts: All',
+            'groups': 'Maison Sofia MGallery\n14.09.26\n07:38\nRooms Forecast - Book\nPeriod: September2026 01.09.26 - 30.09.26\nFilter Property: HB772 / Period Start: September2026 / Period End: December2026 / Business Block Origin: All',
+            'complimentary': 'Maison Sofia MGallery\n13.09.26\n06:36\nNA50 - Guest in House Comp/House *DEF*\nFilter Complimentary Rooms and House Use Rooms',
+        }
+        for kind, text in samples.items():
+            with self.subTest(kind=kind):
+                p = extract_period(text, (text,), kind)
+                d = Document(Path('sample.pdf'), 'test', 1, kind, p)
+                self.assertEqual(validate_period(slots[kind], d, audit, business)[0], 'PASS')
+                wrong = text.replace('14.09.26', '12.09.26').replace('13.09.26', '12.09.26')
+                if kind == 'groups':
+                    wrong = text.replace('Period End: December2026', 'Period End: November2026')
+                p = extract_period(wrong, (wrong,), kind)
+                d = Document(Path('sample.pdf'), 'test', 1, kind, p)
+                self.assertEqual(validate_period(slots[kind], d, audit, business)[0], 'WRONG')
+
+    def test_group_page_months_do_not_conflict_with_whole_period(self):
+        pages = tuple(f'Period: {m}2026\nPeriod Start: September2026 / Period End: December2026' for m in ['September', 'October', 'November', 'December'])
+        p = extract_period(pages[0], pages, 'groups')
+        self.assertEqual((p.start, p.end, p.ambiguous), (date(2026,9,1), date(2026,12,31), False))
+
+    def test_birthday_uses_stay_not_birth_or_guest_dates(self):
+        text = 'From Birth Date 14.09 To Birth Date 14.09\nGuest 12.09.26 18.09.26\nFrom Stay Date 14.09.26 To Stay Date 14.09.26'
+        p = extract_period(text, (text,), 'birthdays')
+        self.assertEqual((p.start, p.end), (date(2026,9,14), date(2026,9,14)))
+
+    def test_group_horizon_crosses_year(self):
+        slot = next(s for s in manifest(date(2026,11,13), date(2026,11,14)) if s.key == 'groups')
+        self.assertEqual((slot.start, slot.end), (date(2026,11,1), date(2027,2,28)))
