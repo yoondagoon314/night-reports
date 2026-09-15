@@ -1,4 +1,4 @@
-"""Classic Windows Outlook adapter. There is deliberately no sending method."""
+"""Classic Windows Outlook adapter. Verified sending is available to the daily automation."""
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -130,3 +130,29 @@ class OutlookAdapter:
                 raise
             except Exception as exc:
                 raise OutlookError("The saved draft could not be reopened. It may have moved or been deleted. Check Outlook before explicitly creating another.") from exc
+
+    def send(self, ref, files, run_id, settings):
+        """Validate the saved draft again immediately before Outlook submission."""
+        with outlook_application() as app:
+            mail = app.Session.GetItemFromID(ref.entry_id, ref.store_id)
+            prop = mail.UserProperties.Find("MaisonNightReportsRun")
+            if bool(mail.Sent) or prop is None or str(prop.Value) != run_id:
+                raise OutlookError("Draft is already sent or does not match this run.")
+            self._verify_attachments(mail, files)
+            if str(mail.Subject) != settings.subject or str(mail.Body).replace("\r\n", "\n").rstrip() != settings.body.replace("\r\n", "\n").rstrip():
+                raise OutlookError("Draft subject or body changed. Automatic sending stopped.")
+            actual = []
+            for i in range(1, mail.Recipients.Count + 1):
+                recipient = mail.Recipients.Item(i)
+                if recipient.Type != 1:
+                    raise OutlookError("Draft recipient type changed.")
+                address = recipient.AddressEntry
+                if str(address.Type).upper() == "EX":
+                    user = address.GetExchangeUser()
+                    smtp = user.PrimarySmtpAddress if user else address.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x39FE001E")
+                else:
+                    smtp = address.Address
+                actual.append(str(smtp).casefold())
+            if sorted(actual) != sorted(a.casefold() for a in settings.recipients):
+                raise OutlookError("Draft recipients changed. Automatic sending stopped.")
+            mail.Send()
