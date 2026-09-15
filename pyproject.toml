@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maison-night-reports"
-version = "0.1.0"
-description = "Local PDF validation and reviewed Outlook drafts for Maison Sofia"
+version = "0.2.0"
+description = "Verified daily report collection and Outlook submission for Maison Sofia"
 requires-python = ">=3.11"
 dependencies = ["pypdf==6.10.0", "pywin32==311; sys_platform == 'win32'"]
 
