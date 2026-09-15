@@ -1,10 +1,10 @@
 """Hotel report identities and period contracts, independent of filenames."""
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 import calendar
 import re
 
-RULE_VERSION = "maison-2026-09-14-v1"
+RULE_VERSION = "maison-2026-09-15-v2"
 MONTHS = ("January", "February", "March", "April", "May", "June", "July",
           "August", "September", "October", "November", "December")
 
@@ -23,8 +23,8 @@ RULES = (
     Rule("arrivals", "Arrivals", "Arrivals.pdf", r"\bARR01102\s+Arrivals\s+by\s+Name\b", "business", "Master/branch identity; full sample pending"),
     Rule("packages", "Breakfast package forecast", "Package forecast.pdf", r"\bRES01124\s+Package\s+forecast\s*-\s*Detailed\b", "business", "Direct PDF sample"),
     Rule("birthdays", "Birthday guests", "Birthday Guests.pdf", r"\bPRO01110\s+Birthday\s+Guests\b", "business", "Master/branch identity; full sample pending"),
-    Rule("events", "Event List", "Event List.pdf", r"\bEvent\s+List\s+Detailed\b", "review", "One-week scope recorded; exact date rule pending"),
-    Rule("groups", "Group rooms forecast", "group rep.pdf", r"\bRooms\s+Forecast\s*-\s*Book\b", "review", "Master/branch identity; date rule pending"),
+    Rule("events", "Event List", "Event List.pdf", r"\bEvent\s+List\s+Detailed\b", "week", "Hotel screenshot: business day through business day +7"),
+    Rule("groups", "Group rooms forecast", "group rep.pdf", r"\bRooms\s+Forecast\s*-\s*Book\b", "group_months", "Hotel screenshot: business month through month +3 inclusive"),
     Rule("yesterday", "Reservations made yesterday", "Reservations - made Yesterday.pdf", r"\bRES01145\s+Reservations\s*-\s*made\s+Yesterday\b", "yesterday", "Direct sample: issue date is new business day"),
     Rule("revenue", "Revenue by transaction codes", "Revenue by Transaction Codes.pdf", r"\bRevenue\s+by\s+Transaction\s+Codes\s+Net\b", "audit", "Direct PDF sample"),
     Rule("manager", "Manager Flash", "Manager flash.pdf", r"\bNA01\s*-\s*Manager\s+Report\s+Net\b", "audit", "Direct PDF sample"),
@@ -59,7 +59,14 @@ def manifest(audit: date, business: date) -> tuple[Slot, ...]:
     for rule in RULES[:-1]:
         target = None if rule.date_basis == "review" else (
             business if rule.date_basis == "business" else audit)
-        slots.append(Slot(rule.key, rule, rule.label, rule.filename, target, target))
+        end = target
+        if rule.date_basis == "week":
+            target, end = business, business + timedelta(days=7)
+        elif rule.date_basis == "group_months":
+            target = business.replace(day=1)
+            year, month0 = divmod(business.year * 12 + business.month - 1 + 3, 12)
+            end = date(year, month0 + 1, calendar.monthrange(year, month0 + 1)[1])
+        slots.append(Slot(rule.key, rule, rule.label, rule.filename, target, end))
     for offset in range(13):
         absolute = business.year * 12 + business.month - 1 + offset
         year, month0 = divmod(absolute, 12)
