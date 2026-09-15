@@ -4,7 +4,7 @@ from datetime import date, timedelta
 import calendar
 import re
 
-RULE_VERSION = "maison-2026-09-15-v2"
+RULE_VERSION = "maison-2026-09-15-v3"
 MONTHS = ("January", "February", "March", "April", "May", "June", "July",
           "August", "September", "October", "November", "December")
 
@@ -21,16 +21,16 @@ class Rule:
 
 RULES = (
     Rule("arrivals", "Arrivals", "Arrivals.pdf", r"\bARR01102\s+Arrivals\s+by\s+Name\b", "business", "Master/branch identity; full sample pending"),
-    Rule("packages", "Breakfast package forecast", "Package forecast.pdf", r"\bRES01124\s+Package\s+forecast\s*-\s*Detailed\b", "business", "Direct PDF sample"),
+    Rule("packages", "Breakfast package forecast", "Package forecast.pdf", r"\b(?:RES01124\s+Package\s+forecast\s*-\s*Detailed|Package\s+forecast\s+RS)\b", "business", "Direct PDF sample"),
     Rule("birthdays", "Birthday guests", "Birthday Guests.pdf", r"\bPRO01110\s+Birthday\s+Guests\b", "business", "Master/branch identity; full sample pending"),
     Rule("events", "Event List", "Event List.pdf", r"\bEvent\s+List\s+Detailed\b", "week", "Hotel screenshot: business day through business day +7"),
     Rule("groups", "Group rooms forecast", "group rep.pdf", r"\bRooms\s+Forecast\s*-\s*Book\b", "group_months", "Hotel screenshot: business month through month +3 inclusive"),
     Rule("yesterday", "Reservations made yesterday", "Reservations - made Yesterday.pdf", r"\bRES01145\s+Reservations\s*-\s*made\s+Yesterday\b", "yesterday", "Direct sample: issue date is new business day"),
-    Rule("revenue", "Revenue by transaction codes", "Revenue by Transaction Codes.pdf", r"\bRevenue\s+by\s+Transaction\s+Codes\s+Net\b", "audit", "Direct PDF sample"),
+    Rule("revenue", "Revenue by transaction codes", "Revenue by Transaction Codes.pdf", r"\b(?:Revenue\s+by\s+Transaction\s+Codes\s+Net|FIN01127\s+Revenue\s+by\s+transaction\s+code\s+all)\b", "audit", "Direct PDF sample"),
     Rule("manager", "Manager Flash", "Manager flash.pdf", r"\bNA01\s*-\s*Manager\s+Report\s+Net\b", "audit", "Direct PDF sample"),
     Rule("noshow", "No shows", "NOSHOW.pdf", r"\bNA40\s*-\s*No\s+Shows\b", "audit", "Direct zero-result PDF sample"),
     Rule("complimentary", "In-house complimentary", "Guests in House complimentary.pdf", r"\bNA50\s*-\s*Guest\s+in\s+House\s+Comp\s*/\s*House\b", "audit", "Master/branch identity; full sample pending"),
-    Rule("forecast", "Past and Future Forecast", "", r"\bFOR01121\s+Past\s+and\s+Future\s+Forecast\b", "month", "September direct PDF sample"),
+    Rule("forecast", "Past and Future Forecast", "", r"\b(?:FOR01121\s+Past\s+and\s+Future\s+Forecast|Past\s+and\s+Future\s+Forecast\s+RS\s+MONTH(?:\s*\+\s*\d{1,2})?)\b", "month", "September direct PDF sample"),
 )
 BY_KEY = {r.key: r for r in RULES}
 
