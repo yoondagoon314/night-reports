@@ -8,7 +8,7 @@ import re
 import sys
 import tempfile
 
-RECIPIENTS = ()  # Configure locally; no distribution list in cloud builds.
+RECIPIENTS = ()  # Configure distribution locally.
 
 
 def data_directory() -> Path:
@@ -40,6 +40,11 @@ class Settings:
     body: str = "Please find attached the night reports.\n\nKind Regards,\n\nFront Office"
     last_folder: str = ""
 
+    automation_enabled: bool = False
+    scheduler_folder: str = r"\\s-eu-hb772-fo\hb772"
+    collect_time: str = "07:05"
+    send_time: str = "07:10"
+
     def validate(self, *, require_recipients=True):
         if not isinstance(self.recipients, list) or (require_recipients and not self.recipients) or any(not isinstance(a, str) or not re.fullmatch(r"[^\s@;,<>]+@[^\s@;,<>]+\.[^\s@;,<>]+", a) for a in self.recipients):
             raise ValueError("Enter one valid email address per line.")
@@ -47,11 +52,20 @@ class Settings:
             raise ValueError("Remove repeated email addresses. Different domains are distinct recipients.")
         if not isinstance(self.subject, str) or not isinstance(self.body, str) or not self.subject.strip() or not self.body.strip() or "\n" in self.subject or "\r" in self.subject:
             raise ValueError("Enter a subject on one line and a non-empty email body.")
+        from datetime import time
+        try:
+            collect, send = time.fromisoformat(self.collect_time), time.fromisoformat(self.send_time)
+        except (ValueError, TypeError):
+            raise ValueError("Enter schedule times as HH:MM.")
+        if send < collect:
+            raise ValueError("Send time must be after collection time.")
+        if not isinstance(self.automation_enabled, bool) or not isinstance(self.scheduler_folder, str) or not self.scheduler_folder.strip():
+            raise ValueError("Choose the OPERA scheduler folder.")
         if not isinstance(self.last_folder, str):
             raise ValueError("The saved folder must be text.")
 
     def save(self, root: Path):
-        self.validate(require_recipients=False)
+        self.validate(require_recipients=self.automation_enabled)
         write_json(root / "settings.json", asdict(self))
 
     @classmethod
@@ -62,7 +76,7 @@ class Settings:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             result = cls(**data)
-            result.validate(require_recipients=False)
+            result.validate(require_recipients=result.automation_enabled)
             return result
         except (OSError, TypeError, ValueError) as exc:
             raise ValueError("Settings could not be read. Restore settings.json from a known-good copy; defaults were not silently substituted.") from exc
