@@ -41,7 +41,7 @@ class PackService:
         if not check.ready:
             raise ValueError("Resolve every blocking report and date review before creating a draft.")
         check.assert_unchanged()
-        email_digest = sha256(json.dumps([settings.recipients, settings.subject, settings.body]).encode()).hexdigest()
+        email_digest = sha256(json.dumps([settings.recipients, settings.subject, settings.body, settings.sender]).encode()).hexdigest()
         with FileLock(self.root / "draft.lock"):
             directory = self.run_folder(check)
             record = self.existing(check)
