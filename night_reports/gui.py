@@ -9,6 +9,7 @@ import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 
+from .automation import DailyAutomation
 from .engine import scan
 from .manifest import manifest
 from .outlook import OutlookAdapter
@@ -37,6 +38,8 @@ class Window:
         self.root, self.data_root = root, data_root
         self.settings = Settings.load(data_root)
         self.service = PackService(data_root, OutlookAdapter())
+        self.automation = DailyAutomation(data_root, self.service)
+        self.progress_queue = Queue()
         self.check = None
         self.busy = False
         self.stamp = None
@@ -47,29 +50,30 @@ class Window:
         root.minsize(960, 680)
         style = ttk.Style(root)
         style.theme_use("clam")
-        style.configure("Treeview", rowheight=25)
+        root.configure(background="#f1f5f9")
+        style.configure(".", font=("Segoe UI", 10), background="#f1f5f9", foreground="#183047")
+        style.configure("TButton", padding=(14, 8), background="#e2e8f0")
+        style.configure("Treeview", rowheight=32, background="#ffffff", fieldbackground="#ffffff", borderwidth=0)
+        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), padding=10)
+        style.configure("Horizontal.TProgressbar", background="#0d9488", troughcolor="#dbe7ed")
         style.configure("Title.TLabel", font=("Segoe UI", 20, "bold"))
         frame = ttk.Frame(root, padding=18)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="Night Reports", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(frame, text="Select folder → confirm dates → check 23 PDFs → review → Outlook draft").pack(anchor="w", pady=(0, 14))
+        ttk.Label(frame, text="Collect → rename → verify → draft → send · 23 reports, one daily pack").pack(anchor="w", pady=(0, 14))
         top = ttk.Frame(frame)
         top.pack(fill="x")
         self.folder = tk.StringVar(value=self.settings.last_folder)
         self.audit = tk.StringVar(value=(date.today() - timedelta(days=1)).isoformat())
         self.business = tk.StringVar(value=date.today().isoformat())
         self.confirmed = tk.BooleanVar(value=False)
-        ttk.Label(top, text="Report folder").grid(row=0, column=0, sticky="w")
         self.inputs = []
         def entry(var, row, col, width):
             w = ttk.Entry(top, textvariable=var, width=width)
             w.grid(row=row, column=col, sticky="ew", padx=(0, 8), pady=4)
             self.inputs.append(w)
             return w
-        entry(self.folder, 1, 0, 58)
-        browse = ttk.Button(top, text="Choose folder…", command=self.browse)
-        browse.grid(row=1, column=1, padx=(0, 15))
-        self.inputs.append(browse)
+        ttk.Label(top, text="Manual report check · source folder in Settings").grid(row=1, column=0, sticky="w")
         ttk.Label(top, text="Closed audit day").grid(row=0, column=2, sticky="w")
         entry(self.audit, 1, 2, 14)
         ttk.Label(top, text="New OPERA business day").grid(row=0, column=3, sticky="w")
@@ -84,10 +88,14 @@ class Window:
         toolbar = ttk.Frame(frame)
         toolbar.pack(fill="x", pady=8)
         for text, cmd in [("Check Reports", self.start_check), ("Settings", self.edit_settings),
-                          ("Check Outlook compatibility", self.compatibility), ("Run history", self.history)]:
+                          ("Run history", self.history), ("Run in background", self.background), ("Exit", self.exit_app)]:
             b = ttk.Button(toolbar, text=text, command=cmd)
             b.pack(side="left", padx=(0, 8))
             self.inputs.append(b)
+        self.progress_value = tk.DoubleVar(value=0)
+        self.stage = tk.StringVar(value="Daily automation · configure in Settings")
+        ttk.Label(frame, textvariable=self.stage).pack(anchor="w", pady=(6, 4))
+        ttk.Progressbar(frame, variable=self.progress_value, maximum=100).pack(fill="x", pady=(0, 14))
         table_frame = ttk.Frame(frame)
         table_frame.pack(fill="both", expand=True)
         self.table = ttk.Treeview(table_frame, columns=("report", "file", "period", "status"), show="headings", selectmode="browse")
@@ -118,7 +126,7 @@ class Window:
         self.draft_button.pack(side="right")
         self.another_button = ttk.Button(review, text="Create another…", command=lambda: self.draft(True))
         self.another_button.pack(side="right", padx=8)
-        self.status = tk.StringVar(value="Runs only while opened. Reception reviews and sends in Outlook.")
+        self.status = tk.StringVar(value="Automatic collection 07:05 · send after 07:10 · keep this PC awake and Outlook available.")
         ttk.Label(frame, textvariable=self.status, wraplength=1080).pack(anchor="w", pady=(12, 0))
         for var in (self.folder, self.audit, self.business):
             var.trace_add("write", self.invalidate)
@@ -126,6 +134,7 @@ class Window:
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(100, self.poll)
         root.after(2000, self.watch)
+        root.after(1000, self.schedule)
         self.update_buttons()
 
     def error(self, exc):
@@ -164,7 +173,7 @@ class Window:
         for w in self.inputs:
             w.state(["disabled"])
         self.update_buttons()
-        self.status.set("Working… Please keep this window open.")
+        self.status.set("Working… You can minimize this window.")
         def run():
             try:
                 self.queue.put((done, action(), None))
@@ -172,7 +181,31 @@ class Window:
                 self.queue.put((done, None, exc))
         self.pool.submit(run)
 
+    def schedule(self):
+        if self.settings.automation_enabled and not self.busy:
+            settings = self.settings
+            def action():
+                try:
+                    return self.automation.tick(settings, progress=lambda n, text: self.progress_queue.put((n, text)))
+                except Exception as exc:
+                    from .outlook import OutlookError
+                    text = str(exc) if isinstance(exc, (ValueError, OutlookError)) else f"Automation stopped ({type(exc).__name__}). Check sources and Outlook."
+                    self.progress_queue.put((0, text))
+                    return text
+            self.work(action, lambda text: self.status.set(text))
+        self.root.after(30000, self.schedule)
+
+    def background(self):
+        self.root.iconify()
+
     def poll(self):
+        try:
+            while True:
+                value, text = self.progress_queue.get_nowait()
+                self.progress_value.set(value)
+                self.stage.set(text)
+        except Empty:
+            pass
         try:
             done, result, exc = self.queue.get_nowait()
             self.busy = False
@@ -329,8 +362,29 @@ class Window:
         dialog.grab_set()
         frame = ttk.Frame(dialog, padding=16)
         frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="Sources & daily automation", style="Title.TLabel").pack(anchor="w")
+        ttk.Button(frame, text="Choose report folder…", command=self.browse).pack(anchor="w")
+        ttk.Label(frame, textvariable=self.folder, wraplength=600).pack(anchor="w")
+        ttk.Button(frame, text="Check Outlook compatibility", command=self.compatibility).pack(anchor="w", pady=5)
+        enabled = tk.BooleanVar(value=self.settings.automation_enabled)
+        ttk.Checkbutton(frame, text="Automatically collect, verify and send daily", variable=enabled).pack(anchor="w")
+        ttk.Label(frame, text="OPERA scheduler folder (audit subfolders are found here too)").pack(anchor="w")
+        source = ttk.Entry(frame, width=65)
+        source.pack(fill="x")
+        source.insert(0, self.settings.scheduler_folder)
+        times = ttk.Frame(frame)
+        times.pack(fill="x", pady=5)
+        ttk.Label(times, text="Collect at").pack(side="left")
+        collect_time = ttk.Entry(times, width=8)
+        collect_time.insert(0, self.settings.collect_time)
+        collect_time.pack(side="left", padx=8)
+        ttk.Label(times, text="Send after").pack(side="left")
+        send_time = ttk.Entry(times, width=8)
+        send_time.insert(0, self.settings.send_time)
+        send_time.pack(side="left", padx=8)
+        ttk.Label(frame, text="Uses this PC's local date/time. Closed audit day = yesterday. Closing minimizes; Exit stops automation.", wraplength=600).pack(anchor="w", pady=5)
         ttk.Label(frame, text="To recipients — one email address per line").pack(anchor="w")
-        addresses = tk.Text(frame, width=65, height=18)
+        addresses = tk.Text(frame, width=65, height=6)
         addresses.pack(fill="x", pady=5)
         addresses.insert("1.0", "\n".join(self.settings.recipients))
         ttk.Label(frame, text="Subject").pack(anchor="w")
@@ -344,7 +398,8 @@ class Window:
         def save():
             try:
                 settings = Settings([s.strip() for s in addresses.get("1.0", "end").splitlines() if s.strip()],
-                                    subject.get(), body.get("1.0", "end-1c"), self.folder.get())
+                                    subject.get(), body.get("1.0", "end-1c"), self.folder.get(),
+                                    enabled.get(), source.get().strip(), collect_time.get().strip(), send_time.get().strip())
                 settings.save(self.data_root)
                 self.settings = settings
                 self.invalidate()
@@ -370,6 +425,9 @@ class Window:
         self.root.after(2000, self.watch)
 
     def close(self):
+        self.background()
+
+    def exit_app(self):
         if self.busy:
             messagebox.showinfo("Night Reports", "Wait for the current check or draft attempt to finish before closing.", parent=self.root)
             return
