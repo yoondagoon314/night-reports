@@ -35,7 +35,7 @@ class PackService:
                 raise ValueError("The saved run record is unreadable. Inspect Outlook and restore the record before retrying.") from exc
         return None
 
-    def prepare(self, check: Check, settings: Settings, *, another: bool = False) -> str:
+    def prepare(self, check: Check, settings: Settings, *, another: bool = False, display: bool = True) -> str:
         """Creates once, or reopens by ID; deliberate replacement is explicit."""
         settings.validate()
         if not check.ready:
@@ -51,7 +51,8 @@ class PackService:
                 if record.get("state") != "ready" or not record.get("draft"):
                     raise ValueError("A previous draft attempt is incomplete or uncertain. Inspect Outlook first. Use Create another only after review.")
                 files = self._checked_saved_files(directory, record)
-                self.adapter.reopen(DraftRef(**record["draft"]), files, record["run_id"])
+                if display:
+                    self.adapter.reopen(DraftRef(**record["draft"]), files, record["run_id"])
                 return "Existing draft opened. No new draft was created."
             if record:
                 write_json(directory / f"previous-{uuid4().hex}.json", record)
@@ -90,7 +91,8 @@ class PackService:
                 write_json(directory / "run.json", record)
                 raise
             # If only displaying fails, the valid saved draft remains 'ready'.
-            self.adapter.reopen(ref, files, attempt)
+            if display:
+                self.adapter.reopen(ref, files, attempt)
             return "Draft ready in Outlook — 23 PDFs attached. Review and send from Outlook."
 
     @staticmethod
